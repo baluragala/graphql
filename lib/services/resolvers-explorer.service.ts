@@ -53,6 +53,7 @@ export class ResolversExplorerService extends BaseExplorerService {
     const resolvers = this.flatMap(modules, (instance, moduleRef) =>
       this.filterResolvers(instance, moduleRef),
     );
+
     return this.groupMetadata(resolvers);
   }
 
@@ -131,11 +132,12 @@ export class ResolversExplorerService extends BaseExplorerService {
       Resolvers.SUBSCRIPTION,
     ].some(type => type === resolver.type);
 
+    const fieldResolverEnhancers = this.gqlOptions.fieldResolverEnhancers || [];
     const contextOptions = isPropertyResolver
       ? {
-          guards: false,
-          filters: false,
-          interceptors: false,
+          guards: fieldResolverEnhancers.includes('guards'),
+          filters: fieldResolverEnhancers.includes('filters'),
+          interceptors: fieldResolverEnhancers.includes('interceptors'),
         }
       : undefined;
 

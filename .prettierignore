@@ -1,1 +1,3 @@
 tests/generated-definitions/*.ts
+tests/**/*.ts
+dist/**/*.ts

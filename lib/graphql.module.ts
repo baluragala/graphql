@@ -4,9 +4,10 @@ import {
   OnModuleInit,
   Provider,
 } from '@nestjs/common/interfaces';
-import { HttpAdapterHost } from '@nestjs/core';
+import { loadPackage } from '@nestjs/common/utils/load-package.util';
+import { ApplicationConfig, HttpAdapterHost } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
-import { ApolloServer } from 'apollo-server-express';
+import { ApolloServerBase } from 'apollo-server-core';
 import { printSchema } from 'graphql';
 import { GraphQLAstExplorer } from './graphql-ast.explorer';
 import { GraphQLSchemaBuilder } from './graphql-schema-builder';
@@ -39,12 +40,13 @@ import { mergeDefaults } from './utils/merge-defaults.util';
   exports: [GraphQLTypesLoader, GraphQLAstExplorer],
 })
 export class GraphQLModule implements OnModuleInit {
-  protected apolloServer: ApolloServer;
+  protected apolloServer: ApolloServerBase;
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
     @Inject(GRAPHQL_MODULE_OPTIONS) private readonly options: GqlModuleOptions,
     private readonly graphqlFactory: GraphQLFactory,
     private readonly graphqlTypesLoader: GraphQLTypesLoader,
+    private readonly applicationConfig: ApplicationConfig,
   ) {}
 
   static forRoot(options: GqlModuleOptions = {}): DynamicModule {
@@ -115,15 +117,6 @@ export class GraphQLModule implements OnModuleInit {
     if (!httpAdapter) {
       return;
     }
-    const {
-      path,
-      disableHealthCheck,
-      onHealthCheck,
-      cors,
-      bodyParserConfig,
-    } = this.options;
-    const app = httpAdapter.getInstance();
-
     const typeDefs =
       (await this.graphqlTypesLoader.mergeTypesByPaths(
         this.options.typePaths,
@@ -141,8 +134,52 @@ export class GraphQLModule implements OnModuleInit {
         this.options,
       );
     }
-    this.apolloServer = new ApolloServer(apolloOptions as any);
-    this.apolloServer.applyMiddleware({
+
+    this.registerGqlServer(apolloOptions);
+    if (this.options.installSubscriptionHandlers) {
+      this.apolloServer.installSubscriptionHandlers(
+        httpAdapter.getHttpServer(),
+      );
+    }
+  }
+
+  private registerGqlServer(apolloOptions: GqlModuleOptions) {
+    const httpAdapter = this.httpAdapterHost.httpAdapter;
+    const adapterName = httpAdapter.constructor && httpAdapter.constructor.name;
+
+    if (adapterName === 'ExpressAdapter') {
+      this.registerExpress(apolloOptions);
+    } else if (adapterName === 'FastifyAdapter') {
+      this.registerFastify(apolloOptions);
+    } else {
+      throw new Error(`No support for current HttpAdapter: ${adapterName}`);
+    }
+  }
+
+  private registerExpress(apolloOptions: GqlModuleOptions) {
+    const { ApolloServer } = loadPackage(
+      'apollo-server-express',
+      'GraphQLModule',
+      () => require('apollo-server-express'),
+    );
+    const prefix = this.applicationConfig.getGlobalPrefix();
+    const useGlobalPrefix = prefix && this.options.useGlobalPrefix;
+    const path = useGlobalPrefix
+      ? prefix + this.options.path
+      : this.options.path;
+
+    const {
+      disableHealthCheck,
+      onHealthCheck,
+      cors,
+      bodyParserConfig,
+    } = this.options;
+
+    const httpAdapter = this.httpAdapterHost.httpAdapter;
+    const app = httpAdapter.getInstance();
+    const apolloServer = new ApolloServer(apolloOptions as any);
+
+    apolloServer.applyMiddleware({
       app,
       path,
       disableHealthCheck,
@@ -151,10 +188,35 @@ export class GraphQLModule implements OnModuleInit {
       bodyParserConfig,
     });
 
-    if (this.options.installSubscriptionHandlers) {
-      this.apolloServer.installSubscriptionHandlers(
-        httpAdapter.getHttpServer(),
-      );
-    }
+    this.apolloServer = apolloServer;
+  }
+
+  private registerFastify(apolloOptions: GqlModuleOptions) {
+    const { ApolloServer } = loadPackage(
+      'apollo-server-fastify',
+      'GraphQLModule',
+      () => require('apollo-server-fastify'),
+    );
+
+    const httpAdapter = this.httpAdapterHost.httpAdapter;
+    const app = httpAdapter.getInstance();
+
+    const apolloServer = new ApolloServer(apolloOptions as any);
+    const {
+      disableHealthCheck,
+      onHealthCheck,
+      cors,
+      bodyParserConfig,
+    } = this.options;
+    app.register(
+      apolloServer.createHandler({
+        disableHealthCheck,
+        onHealthCheck,
+        cors,
+        bodyParserConfig,
+      }),
+    );
+
+    this.apolloServer = apolloServer;
   }
 }

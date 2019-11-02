@@ -1,14 +1,28 @@
 import { Type } from '@nestjs/common';
 import { ModuleMetadata } from '@nestjs/common/interfaces';
-import {
-  Config,
-  IResolverValidationOptions,
-  ServerRegistration,
-} from 'apollo-server-express';
 import { GraphQLSchema } from 'graphql';
 import { BuildSchemaOptions } from '../external/type-graphql.types';
+import { Config } from 'apollo-server-core';
+
+export interface ServerRegistration {
+  path?: string;
+  cors?: any | boolean;
+  bodyParserConfig?: any | boolean;
+  onHealthCheck?: (req: any) => Promise<any>;
+  disableHealthCheck?: boolean;
+}
+
+export interface IResolverValidationOptions {
+  requireResolversForArgs?: boolean;
+  requireResolversForNonScalar?: boolean;
+  requireResolversForAllFields?: boolean;
+  requireResolversForResolveType?: boolean;
+  allowResolversNotInSchema?: boolean;
+}
 
 export type Omit<T, K> = Pick<T, Exclude<keyof T, K>>;
+
+export type Enhancer = 'guards' | 'interceptors' | 'filters';
 export interface GqlModuleOptions
   extends Omit<Config, 'typeDefs'>,
     Partial<
@@ -37,6 +51,23 @@ export interface GqlModuleOptions
   };
   autoSchemaFile?: string | boolean;
   buildSchemaOptions?: BuildSchemaOptions;
+  /**
+   * Prepends the global prefix to the url
+   *
+   * @see [faq/global-prefix](Global Prefix)
+   */
+  useGlobalPrefix?: boolean;
+  /**
+   * Enable/disable enhancers for @ResolveProperty()
+   */
+  fieldResolverEnhancers?: Enhancer[];
+  /**
+   * Is federated service
+   * See @apollo/federation for more details
+   * this field is added as support for apollo graphql federation support
+   * Author: Bala Krishna Ragala
+   */
+  isFederated?: boolean;
 }
 
 export interface GqlOptionsFactory {
